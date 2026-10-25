@@ -1,0 +1,60 @@
+# A Windows test build of this fork's AutoCAD-parity work: every push to the windows-build
+# branch builds cadcraft.exe (x64, release, no signing) and attaches it to a pre-release of
+# this fork. Not part of the pull request.
+name: Windows test build
+
+on:
+  push:
+    branches: [windows-build]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      # The C runtime linked in: the exe runs without the Visual C++ redistributable.
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out craft-fonts
+        uses: actions/checkout@v4
+        with:
+          repository: storytold/craft-fonts
+          ref: b076417b5880bd4154bd22f00695b1d28c6bea83
+          path: craft-fonts
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        shell: pwsh
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+        run: cargo build --release --locked -p cadcraft --target x86_64-pc-windows-msvc
+      - name: Package
+        shell: pwsh
+        run: |
+          $tag = "test-build-$(Get-Date -Format 'yyyyMMdd-HHmm')"
+          New-Item -ItemType Directory -Force out | Out-Null
+          Copy-Item target/x86_64-pc-windows-msvc/release/cadcraft.exe out/cadcraft.exe
+          Compress-Archive -Path out/cadcraft.exe -DestinationPath "out/cadcraft-$tag-windows-x64.zip"
+          "TAG=$tag" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadcraft-windows-x64
+          path: out/*.zip
+      - name: Pre-release on this fork
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" out/*.zip out/cadcraft.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "CADCraft Windows test build $TAG" \
+            --notes "Unsigned Windows x64 test build of branch autocad-parity (commit $GITHUB_SHA): the PR #2034 work merged with current upstream main and FredApps' review fixes. Windows SmartScreen will warn: More info > Run anyway."
