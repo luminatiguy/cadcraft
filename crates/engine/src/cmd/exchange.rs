@@ -18,7 +18,8 @@ use cadcraft_render::raster::{RasterOptions, View};
 use serde_json::{Value, json};
 
 use super::file::{base64_decode, base64_encode, io};
-use super::*;
+use super::{CommandSpec, bad, point_value, str_param};
+
 use crate::{EngineError, Result, Session};
 
 /// Formats EXPORT writes (the io layer picks the writer from the extension).
@@ -420,9 +421,9 @@ fn publish_sheets(s: &Session, v: &Value) -> Result<Vec<PubSheet>> {
 fn write_pdf(path: &str, bytes: &[u8]) -> Result<()> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let tmp = format!("{path}.cadcraft-tmp");
-        std::fs::write(&tmp, bytes).map_err(|e| bad("publish", format!("{path}: {e}")))?;
-        std::fs::rename(&tmp, path).map_err(|e| bad("publish", format!("{path}: {e}")))
+        // Through an unpredictable temporary file, as files are saved: a planted symlink at a
+        // fixed temporary name can't redirect the write (CWE-59).
+        crate::atomic_write::write_atomic(std::path::Path::new(path), bytes).map_err(|e| bad("publish", format!("{path}: {e}")))
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -519,7 +520,8 @@ fn run_publish(s: &mut Session, p: &Value) -> Result<Value> {
     if p.get("combine").and_then(Value::as_bool) == Some(true) {
         let names: Vec<Value> = match p.get("layouts") {
             Some(Value::Array(a)) => a.iter().map(|n| json!({ "layout": n })).collect(),
-            _ => {
+            Some(_) => return Err(bad("publish", "`layouts` must be a list of layout names")),
+            None => {
                 let d = s.doc()?;
                 let mut layouts: Vec<_> = d.layouts.iter().collect();
                 layouts.sort_by_key(|l| l.tab_order);
@@ -703,7 +705,10 @@ mod tests {
     use cadcraft_geom::Vec3;
 
     use super::super::file::{IoHooks, set_io};
+
+    use super::super::resolve_alias;
     use super::*;
+    use serde_json::json;
 
     static DELIVERED: std::sync::Mutex<Vec<(String, String, usize)>> = std::sync::Mutex::new(Vec::new());
 
@@ -936,6 +941,10 @@ mod tests {
         for p in [json!({ "layouts": [] }), json!({ "layouts": ["Nope"] }), json!({ "layouts": "Layout1" }), json!({ "layouts": [1] })] {
             assert!(s.execute("publish", &p).is_err(), "{p}");
         }
+        // Combined into one PDF: the same check, not every layout instead.
+        let path = temp("combined.pdf");
+        assert!(s.execute("publish", &json!({ "combine": true, "layouts": "Layout1", "path": path.to_string_lossy() })).is_err());
+        assert!(!path.exists());
     }
 
     #[test]
