@@ -975,57 +975,14 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
     // Main-axis start and end, cross-axis centre; `slot` is a rect at a main-axis position.
     let (start, end) = if vertical { (area.top() + 4.0, area.bottom() - 4.0) } else { (area.left(), area.right() - 12.0) };
     let cross = if vertical { area.center().x } else { area.center().y };
-    let slot = |pos: f32, len: f32, thick: f32| {
-        if vertical {
-            Rect::from_min_size(pos2(cross - thick / 2.0, pos), vec2(thick, len))
-        } else {
-            Rect::from_min_size(pos2(pos, cross - thick / 2.0), vec2(len, thick))
-        }
-    };
-    let main = |p: Pos2| if vertical { p.y } else { p.x };
+    let axis = Axis { vertical, cross };
+    let slot = |pos: f32, len: f32, thick: f32| axis.slot(pos, len, thick);
 
     // The bar's empty space: right-click for its options (not a keyboard stop).
     let background = ui.interact(area, id.with("background"), Sense::CLICK);
     background.context_menu(|ui| options_menu(ui, bar, shown_bars, None, dock, &mut action));
 
-    // The handle: drag it to the top or the left edge to dock the bar there.
-    let grip = slot(start, GRIP, BUTTON);
-    let grip_resp = ui.interact(grip, id.with("grip"), Sense::DRAG).on_hover_cursor(egui::CursorIcon::Grab);
-    for i in 0..4 {
-        for j in [-2.0, 2.0] {
-            let along = grip.min
-                + if vertical {
-                    vec2(grip.width() / 2.0 - 7.5 + i as f32 * 5.0, grip.height() / 2.0 + j)
-                } else {
-                    vec2(grip.width() / 2.0 + j, grip.height() / 2.0 - 7.5 + i as f32 * 5.0)
-                };
-            ui.painter().circle_filled(along, 1.0, t.text_dim);
-        }
-    }
-    let grip_resp = if grip_resp.dragged() {
-        grip_resp
-    } else {
-        grip_resp.on_hover_ui(|ui| {
-            ui.label(RichText::new(crate::i18n::t(bar.title())).strong());
-            ui.label(crate::tl!("Drag to dock the Tool Bar at the top or on the left"));
-        })
-    };
-    let screen = ui.ctx().content_rect();
-    if grip_resp.dragged() {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        if let Some(target) = ui.ctx().pointer_latest_pos().and_then(|p| drop_target(screen, p)) {
-            let preview = match target {
-                Dock::Top => Rect::from_min_size(screen.min, vec2(screen.width(), THICKNESS)),
-                Dock::Left => Rect::from_min_size(screen.min, vec2(THICKNESS, screen.height())),
-            };
-            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("dock_preview")));
-            painter.rect_filled(preview, 2.0, t.accent.gamma_multiply(0.25));
-            painter.rect_stroke(preview, 2.0, Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
-        }
-    }
-    if grip_resp.drag_stopped()
-        && let Some(target) = ui.ctx().pointer_latest_pos().and_then(|p| drop_target(screen, p))
-    {
+    if let Some(target) = grip_handle(ui, id, bar, axis, start) {
         action = Some(Action::Dock(target));
     }
 
@@ -1038,12 +995,7 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
             action = Some(Action::AppMenu);
         }
         let at = first + BUTTON + GAP + (SEP - GAP) / 2.0;
-        let half = BUTTON / 2.0 - 3.0;
-        if vertical {
-            ui.painter().hline((cross - half)..=(cross + half), at, Stroke::new(1.0, t.border));
-        } else {
-            ui.painter().vline(at, (cross - half)..=(cross + half), Stroke::new(1.0, t.border));
-        }
+        axis.cross_line(ui, at, BUTTON / 2.0 - 3.0, Stroke::new(1.0, t.border));
         first += BUTTON + GAP + SEP;
     }
     let extent = |item: &String| {
@@ -1057,22 +1009,7 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
             BUTTON + GAP
         }
     };
-    let room = end - first;
-    let total: f32 = items.iter().map(extent).sum();
-    let mut shown = items.len();
-    if total > room {
-        let budget = room - (BUTTON + GAP);
-        let mut used = 0.0;
-        shown = 0;
-        for item in &items {
-            let w = extent(item);
-            if used + w > budget {
-                break;
-            }
-            used += w;
-            shown += 1;
-        }
-    }
+    let shown = fit_count(&items, end - first, &extent);
 
     let dragging = ui.ctx().dragged_id().is_some();
     let mut placed: Vec<(usize, Rect)> = Vec::new();
@@ -1082,12 +1019,7 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
     for (index, item) in items.iter().enumerate().take(shown) {
         if item == SEPARATOR {
             let at = pos + (SEP - GAP) / 2.0;
-            let half = BUTTON / 2.0 - 3.0;
-            if vertical {
-                ui.painter().hline((cross - half)..=(cross + half), at, Stroke::new(1.0, t.border));
-            } else {
-                ui.painter().vline(at, (cross - half)..=(cross + half), Stroke::new(1.0, t.border));
-            }
+            axis.cross_line(ui, at, BUTTON / 2.0 - 3.0, Stroke::new(1.0, t.border));
             pos += SEP;
             continue;
         }
@@ -1108,23 +1040,7 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
             icons::paint(ui.painter(), br.shrink(4.0), tool.icon, !tool.enabled());
         }
         icons::describe_control(ui, &resp, &tool.accessible_label(mac), None, false);
-        let resp = if dragging {
-            resp
-        } else if tool.command == LAYER_COMBO {
-            let current = layers.as_ref().map(|(cur, _)| cur.clone()).unwrap_or_default();
-            resp.on_hover_ui(|ui| {
-                ui.label(RichText::new(crate::i18n::t(tool.label)).strong());
-                ui.label(RichText::new(format!("{} {current}", crate::tl!("Current layer:"))).weak());
-            })
-        } else if combo {
-            let current = names.as_ref().map(|(c, _)| c.clone()).unwrap_or_default();
-            resp.on_hover_ui(|ui| {
-                ui.label(RichText::new(crate::i18n::t(tool.label)).strong());
-                ui.label(RichText::new(current).weak());
-            })
-        } else {
-            resp.on_hover_ui(|ui| tooltip(ui, &tool, mac))
-        };
+        let resp = tool_hover(resp, &tool, dragging, layers.as_ref().map(|(c, _)| c.as_str()), names.as_ref().map(|(c, _)| c.as_str()), mac);
         resp.context_menu(|ui| options_menu(ui, bar, shown_bars, Some(index), dock, &mut action));
         let align = if vertical { egui::RectAlign::RIGHT_START } else { egui::RectAlign::BOTTOM_START };
         if tool.command == LAYER_COMBO {
@@ -1166,123 +1082,178 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
         // Undo and Redo: a narrow arrow beside the button lists the steps to go back (or forward) to.
         let mut extra = 0.0;
         if has_history(tool.command) && !vertical {
-            let hr = slot(pos + len, HISTORY_W, BUTTON);
-            let hresp = ui.interact(hr, id.with(("tb_history", tool.command)), Sense::click());
-            if hresp.hovered() {
-                ui.painter().rect_filled(hr, 3.0, t.control_hover.gamma_multiply(0.6));
+            if let Some(m) = history_button(app, ui, axis, id, tool.command, pos + len) {
+                action = Some(m);
             }
-            icons::paint(ui.painter(), Rect::from_center_size(hr.center(), vec2(10.0, 10.0)), Icon::ChevronDown, false);
-            let undo = tool.command == "u";
-            let hresp = hresp.on_hover_text(if undo { crate::tl!("Undo several steps") } else { crate::tl!("Redo several steps") });
-            egui::Popup::menu(&hresp).align(egui::RectAlign::BOTTOM_START).show(|ui| {
-                if let Some(k) = history_list(app, ui, undo) {
-                    action = Some(Action::History(undo, k));
-                    ui.close();
-                }
-            });
             extra = HISTORY_W;
         }
         placed.push((index, br));
         pos += len + extra + GAP;
     }
 
-    // Dragging a button: show where it lands; dropping it on the bar moves it there.
-    let insertion = |p: Pos2| -> Option<(usize, f32)> {
-        if !area.expand(24.0).contains(p) {
-            return None;
-        }
-        let along = main(p);
-        match placed.iter().find(|(_, r)| main(r.center()) > along) {
-            Some((index, r)) => Some((*index, main(r.min) - GAP / 2.0)),
-            None => placed.last().map(|(index, r)| (index + 1, main(r.max) + GAP / 2.0)),
-        }
-    };
-    if let Some(from) = drag_from {
-        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-        let pointer = ui.ctx().pointer_latest_pos();
-        if let Some((_, at)) = pointer.and_then(insertion) {
-            let half = BUTTON / 2.0 + 2.0;
-            let stroke = Stroke::new(2.0, t.accent);
-            if vertical {
-                ui.painter().hline((cross - half)..=(cross + half), at, stroke);
-            } else {
-                ui.painter().vline(at, (cross - half)..=(cross + half), stroke);
-            }
-        }
-        if let (Some(p), Some(tool)) = (pointer, items.get(from).and_then(|c| find(c))) {
-            let ghost = Rect::from_center_size(p + vec2(10.0, 10.0), vec2(BUTTON, BUTTON));
-            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("ghost")));
-            painter.rect_filled(ghost, 3.0, t.control_hover);
-            painter.rect_stroke(ghost, 3.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
-            icons::paint(&painter, ghost.shrink(4.0), tool.icon, false);
-        }
-    }
-    if let Some(from) = drop_from
-        && let Some((slot_index, _)) = ui.ctx().pointer_latest_pos().and_then(insertion)
-        && slot_index != from
-        && slot_index != from + 1
-    {
-        action = Some(Action::Move { from, slot: slot_index });
+    if let Some(m) = drag_feedback(ui, id, axis, area, &placed, &items, drag_from, drop_from) {
+        action = Some(m);
     }
 
     // The items that did not fit.
-    if shown < items.len() {
-        let br = slot(pos, BUTTON, BUTTON);
-        let response = ui.interact(br, id.with("toolbar_more"), Sense::click());
-        if response.hovered() {
-            ui.painter().rect_filled(br, 3.0, t.control_hover.gamma_multiply(0.6));
-        }
-        for offset in [-5.0, 0.0, 5.0] {
-            let d = if vertical { vec2(0.0, offset) } else { vec2(offset, 0.0) };
-            ui.painter().circle_filled(br.center() + d, 1.5, t.text);
-        }
-        icons::describe_control(ui, &response, bar.more_label(), None, false);
-        let align = if vertical { egui::RectAlign::RIGHT_START } else { egui::RectAlign::BOTTOM_START };
-        egui::Popup::menu(&response).align(align).show(|ui| {
-            for item in items.iter().skip(shown) {
-                if item == SEPARATOR {
-                    ui.separator();
-                    continue;
-                }
-                let Some(tool) = find(item) else { continue };
-                if tool.command == LAYER_COMBO {
-                    // The drop-down does not fit a menu row: its layers are listed in place.
-                    if let Some((cur, rows)) = &layers
-                        && layer_popup(ui, "more", cur, rows, &mut action)
-                    {
-                        ui.close();
-                    }
-                    continue;
-                }
-                if is_combo(tool.command) {
-                    if let Some((cur, list)) = combo_names(app, tool.command) {
-                        ui.label(RichText::new(crate::i18n::t(tool.label)).weak());
-                        let preview = combo_preview(app, tool.command);
-                        if let Some(n) = name_list(ui, tool.command, &cur, &list, preview.as_ref()) {
-                            action = Some(Action::SetCurrent(tool.command, n));
-                            ui.close();
-                        }
-                        ui.separator();
-                    }
-                    continue;
-                }
-                let response = ui.add_enabled(tool.enabled(), egui::Button::new(crate::i18n::t(tool.label)));
-                crate::control::record_widget(ui, &response, tool.label, "button", None);
-                let response = response.on_hover_ui(|ui| tooltip(ui, &tool, mac));
-                if response.clicked() {
-                    action = Some(Action::Run(tool.command));
-                    ui.close();
-                }
-            }
-            ui.separator();
-            if ui.button(crate::tl!("Customize Tool Bar...")).clicked() {
-                action = Some(Action::Customize);
-                ui.close();
-            }
-        });
-        response.on_hover_text(crate::i18n::t(bar.more_label()));
+    if shown < items.len()
+        && let Some(m) = more_menu(app, ui, axis, id, bar, &items[shown..], pos, &layers)
+    {
+        action = Some(m);
     }
 
+    apply_action(app, ui, id, bar, &mut items, action);
+}
+
+/// A bar's main axis (along its buttons) and the cross-axis centre line.
+#[derive(Clone, Copy)]
+struct Axis {
+    vertical: bool,
+    cross: f32,
+}
+
+impl Axis {
+    /// A rect at a main-axis position, `len` long and `thick` across.
+    fn slot(self, pos: f32, len: f32, thick: f32) -> Rect {
+        if self.vertical {
+            Rect::from_min_size(pos2(self.cross - thick / 2.0, pos), vec2(thick, len))
+        } else {
+            Rect::from_min_size(pos2(pos, self.cross - thick / 2.0), vec2(len, thick))
+        }
+    }
+    /// A line across the bar at main-axis position `at`, `half` either side of the centre line.
+    fn cross_line(self, ui: &egui::Ui, at: f32, half: f32, stroke: Stroke) {
+        let across = (self.cross - half)..=(self.cross + half);
+        if self.vertical {
+            ui.painter().hline(across, at, stroke);
+        } else {
+            ui.painter().vline(at, across, stroke);
+        }
+    }
+    /// The main-axis coordinate of `p`.
+    fn main(self, p: Pos2) -> f32 {
+        if self.vertical { p.y } else { p.x }
+    }
+}
+
+/// The More button at `pos` and its menu of the items that did not fit (`rest`).
+#[allow(clippy::too_many_arguments)]
+fn more_menu(
+    app: &CadApp,
+    ui: &egui::Ui,
+    axis: Axis,
+    id: egui::Id,
+    bar: Bar,
+    rest: &[String],
+    pos: f32,
+    layers: &Option<(String, Vec<crate::palettes::LayerRow>)>,
+) -> Option<Action> {
+    let t = Tokens::get();
+    let mac = ui.ctx().os().is_mac();
+    let vertical = axis.vertical;
+    let mut action = None;
+    let br = axis.slot(pos, BUTTON, BUTTON);
+    let response = ui.interact(br, id.with("toolbar_more"), Sense::click());
+    if response.hovered() {
+        ui.painter().rect_filled(br, 3.0, t.control_hover.gamma_multiply(0.6));
+    }
+    for offset in [-5.0, 0.0, 5.0] {
+        let d = if vertical { vec2(0.0, offset) } else { vec2(offset, 0.0) };
+        ui.painter().circle_filled(br.center() + d, 1.5, t.text);
+    }
+    icons::describe_control(ui, &response, bar.more_label(), None, false);
+    let align = if vertical { egui::RectAlign::RIGHT_START } else { egui::RectAlign::BOTTOM_START };
+    egui::Popup::menu(&response).align(align).show(|ui| {
+        for item in rest {
+            if item == SEPARATOR {
+                ui.separator();
+                continue;
+            }
+            let Some(tool) = find(item) else { continue };
+            if tool.command == LAYER_COMBO {
+                // The drop-down does not fit a menu row: its layers are listed in place.
+                if let Some((cur, rows)) = layers
+                    && layer_popup(ui, "more", cur, rows, &mut action)
+                {
+                    ui.close();
+                }
+                continue;
+            }
+            if is_combo(tool.command) {
+                if let Some((cur, list)) = combo_names(app, tool.command) {
+                    ui.label(RichText::new(crate::i18n::t(tool.label)).weak());
+                    let preview = combo_preview(app, tool.command);
+                    if let Some(n) = name_list(ui, tool.command, &cur, &list, preview.as_ref()) {
+                        action = Some(Action::SetCurrent(tool.command, n));
+                        ui.close();
+                    }
+                    ui.separator();
+                }
+                continue;
+            }
+            let response = ui.add_enabled(tool.enabled(), egui::Button::new(crate::i18n::t(tool.label)));
+            crate::control::record_widget(ui, &response, tool.label, "button", None);
+            let response = response.on_hover_ui(|ui| tooltip(ui, &tool, mac));
+            if response.clicked() {
+                action = Some(Action::Run(tool.command));
+                ui.close();
+            }
+        }
+        ui.separator();
+        if ui.button(crate::tl!("Customize Tool Bar...")).clicked() {
+            action = Some(Action::Customize);
+            ui.close();
+        }
+    });
+    response.on_hover_text(crate::i18n::t(bar.more_label()));
+    action
+}
+
+/// Undo and Redo: the narrow arrow at `pos` beside the button lists the steps to go back (or forward) to.
+fn history_button(app: &CadApp, ui: &egui::Ui, axis: Axis, id: egui::Id, command: &'static str, pos: f32) -> Option<Action> {
+    let t = Tokens::get();
+    let mut action = None;
+    let hr = axis.slot(pos, HISTORY_W, BUTTON);
+    let hresp = ui.interact(hr, id.with(("tb_history", command)), Sense::click());
+    if hresp.hovered() {
+        ui.painter().rect_filled(hr, 3.0, t.control_hover.gamma_multiply(0.6));
+    }
+    icons::paint(ui.painter(), Rect::from_center_size(hr.center(), vec2(10.0, 10.0)), Icon::ChevronDown, false);
+    let undo = command == "u";
+    let hresp = hresp.on_hover_text(if undo { crate::tl!("Undo several steps") } else { crate::tl!("Redo several steps") });
+    egui::Popup::menu(&hresp).align(egui::RectAlign::BOTTOM_START).show(|ui| {
+        if let Some(k) = history_list(app, ui, undo) {
+            action = Some(Action::History(undo, k));
+            ui.close();
+        }
+    });
+    action
+}
+
+/// A bar button's hover text (none while something is dragged): the tool, or a drop-down's current `layer` or `name`.
+fn tool_hover(resp: egui::Response, tool: &Tool, dragging: bool, layer: Option<&str>, name: Option<&str>, mac: bool) -> egui::Response {
+    if dragging {
+        resp
+    } else if tool.command == LAYER_COMBO {
+        let current = layer.unwrap_or_default().to_string();
+        resp.on_hover_ui(|ui| {
+            ui.label(RichText::new(crate::i18n::t(tool.label)).strong());
+            ui.label(RichText::new(format!("{} {current}", crate::tl!("Current layer:"))).weak());
+        })
+    } else if is_combo(tool.command) {
+        let current = name.unwrap_or_default().to_string();
+        resp.on_hover_ui(|ui| {
+            ui.label(RichText::new(crate::i18n::t(tool.label)).strong());
+            ui.label(RichText::new(current).weak());
+        })
+    } else {
+        resp.on_hover_ui(|ui| tooltip(ui, tool, mac))
+    }
+}
+
+/// Carry out what the user did on a tool bar.
+fn apply_action(app: &mut CadApp, ui: &egui::Ui, id: egui::Id, bar: Bar, items: &mut Vec<String>, action: Option<Action>) {
+    let mut action = action;
     if matches!(action, Some(Action::AppMenu)) {
         let picked = ui.ctx().data_mut(|d| d.remove_temp::<&'static str>(id.with("app_menu").with("picked")));
         action = picked.map(Action::AppCommand);
@@ -1290,14 +1261,14 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
     match action {
         Some(Action::Run(command)) => run_tool(app, command),
         Some(Action::Move { from, slot }) => {
-            move_item(&mut items, from, slot);
-            *fields(&mut app.ui, bar).2 = sanitize(&items);
+            move_item(items, from, slot);
+            *fields(&mut app.ui, bar).2 = sanitize(items);
         }
         Some(Action::Remove(index)) => {
             if index < items.len() {
                 items.remove(index);
             }
-            *fields(&mut app.ui, bar).2 = sanitize(&items);
+            *fields(&mut app.ui, bar).2 = sanitize(items);
         }
         Some(Action::Dock(target)) => *fields(&mut app.ui, bar).1 = target,
         Some(Action::Customize) => app.ui.dialog = Some(format!("toolbar:{}", bar.id())),
@@ -1337,6 +1308,123 @@ fn strip(app: &mut CadApp, ui: &mut egui::Ui, area: Rect, vertical: bool, bar: B
         }
         None => {}
     }
+}
+
+/// The bar's handle at `start`: drag it to the top or the left edge to dock the bar there.
+fn grip_handle(ui: &egui::Ui, id: egui::Id, bar: Bar, axis: Axis, start: f32) -> Option<Dock> {
+    // The handle: drag it to the top or the left edge to dock the bar there.
+    let grip = axis.slot(start, GRIP, BUTTON);
+    let vertical = axis.vertical;
+    let t = Tokens::get();
+    let grip_resp = ui.interact(grip, id.with("grip"), Sense::DRAG).on_hover_cursor(egui::CursorIcon::Grab);
+    for i in 0..4 {
+        for j in [-2.0, 2.0] {
+            let along = grip.min
+                + if vertical {
+                    vec2(grip.width() / 2.0 - 7.5 + i as f32 * 5.0, grip.height() / 2.0 + j)
+                } else {
+                    vec2(grip.width() / 2.0 + j, grip.height() / 2.0 - 7.5 + i as f32 * 5.0)
+                };
+            ui.painter().circle_filled(along, 1.0, t.text_dim);
+        }
+    }
+    let grip_resp = if grip_resp.dragged() {
+        grip_resp
+    } else {
+        grip_resp.on_hover_ui(|ui| {
+            ui.label(RichText::new(crate::i18n::t(bar.title())).strong());
+            ui.label(crate::tl!("Drag to dock the Tool Bar at the top or on the left"));
+        })
+    };
+    let screen = ui.ctx().content_rect();
+    if grip_resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        if let Some(target) = ui.ctx().pointer_latest_pos().and_then(|p| drop_target(screen, p)) {
+            let preview = match target {
+                Dock::Top => Rect::from_min_size(screen.min, vec2(screen.width(), THICKNESS)),
+                Dock::Left => Rect::from_min_size(screen.min, vec2(THICKNESS, screen.height())),
+            };
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("dock_preview")));
+            painter.rect_filled(preview, 2.0, t.accent.gamma_multiply(0.25));
+            painter.rect_stroke(preview, 2.0, Stroke::new(2.0, t.accent), egui::StrokeKind::Inside);
+        }
+    }
+    if grip_resp.drag_stopped() { ui.ctx().pointer_latest_pos().and_then(|p| drop_target(screen, p)) } else { None }
+}
+
+/// How many of `items` fit in `room` with room left for the More button.
+fn fit_count(items: &[String], room: f32, extent: &dyn Fn(&String) -> f32) -> usize {
+    let total: f32 = items.iter().map(extent).sum();
+    let mut shown = items.len();
+    if total > room {
+        let budget = room - (BUTTON + GAP);
+        let mut used = 0.0;
+        shown = 0;
+        for item in items {
+            let w = extent(item);
+            if used + w > budget {
+                break;
+            }
+            used += w;
+            shown += 1;
+        }
+    }
+    shown
+}
+
+/// Dragging a button: show where it lands; dropping it on the bar moves it there.
+#[allow(clippy::too_many_arguments)]
+fn drag_feedback(
+    ui: &egui::Ui,
+    id: egui::Id,
+    axis: Axis,
+    area: Rect,
+    placed: &[(usize, Rect)],
+    items: &[String],
+    drag_from: Option<usize>,
+    drop_from: Option<usize>,
+) -> Option<Action> {
+    let t = Tokens::get();
+    let (vertical, cross) = (axis.vertical, axis.cross);
+    // Dragging a button: show where it lands; dropping it on the bar moves it there.
+    let insertion = |p: Pos2| -> Option<(usize, f32)> {
+        if !area.expand(24.0).contains(p) {
+            return None;
+        }
+        let along = axis.main(p);
+        match placed.iter().find(|(_, r)| axis.main(r.center()) > along) {
+            Some((index, r)) => Some((*index, axis.main(r.min) - GAP / 2.0)),
+            None => placed.last().map(|(index, r)| (index + 1, axis.main(r.max) + GAP / 2.0)),
+        }
+    };
+    if let Some(from) = drag_from {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        let pointer = ui.ctx().pointer_latest_pos();
+        if let Some((_, at)) = pointer.and_then(insertion) {
+            let half = BUTTON / 2.0 + 2.0;
+            let stroke = Stroke::new(2.0, t.accent);
+            if vertical {
+                ui.painter().hline((cross - half)..=(cross + half), at, stroke);
+            } else {
+                ui.painter().vline(at, (cross - half)..=(cross + half), stroke);
+            }
+        }
+        if let (Some(p), Some(tool)) = (pointer, items.get(from).and_then(|c| find(c))) {
+            let ghost = Rect::from_center_size(p + vec2(10.0, 10.0), vec2(BUTTON, BUTTON));
+            let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, id.with("ghost")));
+            painter.rect_filled(ghost, 3.0, t.control_hover);
+            painter.rect_stroke(ghost, 3.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+            icons::paint(&painter, ghost.shrink(4.0), tool.icon, false);
+        }
+    }
+    if let Some(from) = drop_from
+        && let Some((slot_index, _)) = ui.ctx().pointer_latest_pos().and_then(insertion)
+        && slot_index != from
+        && slot_index != from + 1
+    {
+        return Some(Action::Move { from, slot: slot_index });
+    }
+    None
 }
 
 /// The application menu: the file commands and Options, under the CADCraft button.
