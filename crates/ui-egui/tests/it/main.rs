@@ -1,6 +1,6 @@
 mod animation_effects;
-mod block_manager;
 mod block_description_palette;
+mod block_manager;
 mod chrome_geometry;
 mod clipboard_between_drawings;
 mod context_menu;
