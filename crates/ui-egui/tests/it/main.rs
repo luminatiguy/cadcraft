@@ -47,3 +47,4 @@ mod toolsets_parametric;
 mod toolsets_ribbon;
 mod viewport_double_click_selection;
 mod workspace_focus;
+mod zoomed_far_in;
