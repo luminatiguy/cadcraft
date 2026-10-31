@@ -225,6 +225,11 @@ fn has_history(command: &str) -> bool {
     matches!(command, "u" | "redo")
 }
 
+/// The history row hovered on the last frame, as [`history_list`] stores it.
+fn last_hovered(d: &egui::util::IdTypeMap, id: egui::Id) -> Option<usize> {
+    d.get_temp::<Option<usize>>(id).flatten()
+}
+
 /// The Undo (or Redo) steps, newest first, at most [`HISTORY_MAX`], in a scrolling list; hovering
 /// a step highlights it and every step before it. The number of steps picked.
 fn history_list(app: &CadApp, ui: &mut egui::Ui, undo: bool) -> Option<usize> {
@@ -241,7 +246,9 @@ fn history_list(app: &CadApp, ui: &mut egui::Ui, undo: bool) -> Option<usize> {
         return None;
     }
     let hover_id = egui::Id::unique(("cc_history_hover", undo));
-    let hovered: Option<usize> = ui.data(|d| d.get_temp(hover_id));
+    // Stored as `Option<usize>` (none hovered last frame), read back as the same type: egui keys
+    // temp data by id and type, so reading a bare `usize` would never find it.
+    let hovered = ui.data(|d| last_hovered(d, hover_id));
     let mut now_hovered = None;
     let mut picked = None;
     ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
@@ -258,7 +265,7 @@ fn history_list(app: &CadApp, ui: &mut egui::Ui, undo: bool) -> Option<usize> {
             }
         }
     });
-    ui.data_mut(|d| d.insert_temp(hover_id, now_hovered));
+    ui.data_mut(|d| d.insert_temp::<Option<usize>>(hover_id, now_hovered));
     let n = now_hovered.or(hovered).map_or(0, |h| h + 1);
     let what = if undo { crate::tl!("Undo") } else { crate::tl!("Redo") };
     ui.separator();
@@ -1258,6 +1265,12 @@ fn apply_action(app: &mut CadApp, ui: &egui::Ui, id: egui::Id, bar: Bar, items: 
         let picked = ui.ctx().data_mut(|d| d.remove_temp::<&'static str>(id.with("app_menu").with("picked")));
         action = picked.map(Action::AppCommand);
     }
+    run_action(app, bar, items, action);
+}
+
+/// Carry out a tool bar action. `CadApp::run` already echoes a command's error, so the
+/// handlers here do not echo it again.
+fn run_action(app: &mut CadApp, bar: Bar, items: &mut Vec<String>, action: Option<Action>) {
     match action {
         Some(Action::Run(command)) => run_tool(app, command),
         Some(Action::Move { from, slot }) => {
@@ -1283,14 +1296,13 @@ fn apply_action(app: &mut CadApp, ui: &egui::Ui, id: egui::Id, bar: Bar, items: 
         }
         Some(Action::History(undo, steps)) => {
             for _ in 0..steps.min(HISTORY_MAX) {
-                if let Err(e) = app.run(if undo { "u" } else { "redo" }, json!({})) {
-                    app.session.echo(e);
+                if app.run(if undo { "u" } else { "redo" }, json!({})).is_err() {
                     break;
                 }
             }
         }
         Some(Action::SetCurrent(combo, name)) => {
-            let r = match combo {
+            let _ = match combo {
                 TEXTSTYLE_COMBO => app.run("style.current", json!({ "name": name })),
                 DIMSTYLE_COMBO => app.run("dimstyle.current", json!({ "name": name })),
                 LWEIGHT_COMBO => {
@@ -1302,9 +1314,6 @@ fn apply_action(app: &mut CadApp, ui: &egui::Ui, id: egui::Id, bar: Bar, items: 
                 }
                 _ => app.run("linetype", json!({ "current": name })),
             };
-            if let Err(e) = r {
-                app.session.echo(e);
-            }
         }
         None => {}
     }
@@ -1984,5 +1993,27 @@ mod tests {
         assert_eq!(drop_target(screen, pos2(20.0, 400.0)), Some(Dock::Left));
         assert_eq!(drop_target(screen, pos2(600.0, 20.0)), Some(Dock::Top));
         assert_eq!(drop_target(screen, pos2(600.0, 400.0)), None);
+    }
+
+    /// The Undo/Redo list reads back the hovered row it stored (#2329 review: it was stored as
+    /// `Option<usize>` and read as `usize`, so the steps were never highlighted).
+    #[test]
+    fn the_hovered_history_row_is_read_back() {
+        let mut d = egui::util::IdTypeMap::default();
+        let id = egui::Id::unique("history-hover-test");
+        d.insert_temp::<Option<usize>>(id, Some(3));
+        assert_eq!(last_hovered(&d, id), Some(3));
+        d.insert_temp::<Option<usize>>(id, None);
+        assert_eq!(last_hovered(&d, id), None);
+    }
+
+    /// A rejected drop-down choice on the bar is reported once, not twice (#2329 review).
+    #[test]
+    fn a_rejected_bar_choice_is_echoed_once() {
+        let mut app = CadApp::new(cadcraft_engine::Session::new(), crate::Services::default());
+        let before = app.session.log.len();
+        run_action(&mut app, Bar::Standard, &mut Vec::new(), Some(Action::SetCurrent(TEXTSTYLE_COMBO, "No such style".into())));
+        let new: Vec<&String> = app.session.log.iter().skip(before).collect();
+        assert_eq!(new.len(), 1, "{new:?}");
     }
 }
