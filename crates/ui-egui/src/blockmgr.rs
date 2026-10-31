@@ -94,7 +94,7 @@ pub fn paint_list(p: &egui::Painter, r: Rect, list: &cadcraft_render::DisplayLis
                 cadcraft_render::Kind::Tris | cadcraft_render::Kind::Mask => {
                     let fill = if prim.kind == cadcraft_render::Kind::Mask { t.canvas } else { col };
                     let mut mesh = egui::Mesh::default();
-                    for tri in pts.chunks_exact(3) {
+                    for tri in pts.as_chunks::<3>().0 {
                         let base = u32::try_from(mesh.vertices.len()).unwrap_or(u32::MAX);
                         for v in tri {
                             mesh.colored_vertex(at(v), fill);
