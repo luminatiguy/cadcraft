@@ -96,3 +96,9 @@ sync_github_name = false
 
 [people.dylanmtaylor]
 sync_github_name = true
+
+[people.GULERTOLGA]
+sync_github_name = true
+
+[people.starise]
+real_name = "Andrea Brandi"
