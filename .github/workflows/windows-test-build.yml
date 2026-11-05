@@ -40,6 +40,8 @@ jobs:
         shell: pwsh
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          # This test build never checks for (or offers) the released version.
+          CADCRAFT_NO_UPDATE_CHECK: "1"
         run: cargo build --release --locked -p cadcraft --target x86_64-pc-windows-msvc
       - name: Package
         shell: pwsh

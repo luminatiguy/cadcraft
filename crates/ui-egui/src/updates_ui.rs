@@ -36,6 +36,11 @@ impl CadApp {
 
 /// Help ▸ Check for Updates…: check now, and show the result when there is nothing newer.
 pub fn check_now(app: &mut CadApp) {
+    // A test build made with CADCRAFT_NO_UPDATE_CHECK set doesn't check.
+    if option_env!("CADCRAFT_NO_UPDATE_CHECK").is_some() {
+        app.session.echo("This test build does not check for updates.");
+        return;
+    }
     app.updates_rt.check_requested = true;
     app.updates_rt.result_echoed = false;
 }
