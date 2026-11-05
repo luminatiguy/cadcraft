@@ -64,4 +64,4 @@ jobs:
           gh release upload "$TAG" out/*.zip out/cadcraft.exe --repo "$GITHUB_REPOSITORY" --clobber
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --prerelease \
             --title "CADCraft Windows test build $TAG" \
-            --notes "Unsigned Windows x64 test build (commit $GITHUB_SHA, built $(date -u +%Y-%m-%d)): all 15 parts of the AutoCAD-parity work (PRs #2316-#2330) with the FredApps and CodeRabbit review fixes, merged with current upstream main, with spline fit-point grip editing and the latest FredApps fixes. Windows SmartScreen will warn: More info > Run anyway."
+            --notes "Unsigned Windows x64 test build (commit $GITHUB_SHA, built $(date -u +%Y-%m-%d)): the AutoCAD-parity work (PRs #2316-#2330; #2319 is now in main) with the review fixes, merged with current upstream main. New in this build: tool bar drop-downs follow the selection, lineweights show in steps in model space and to scale in layouts, Tab moves between the RECTANG width and height boxes, OFFSET asks for a distance at the cursor. This build does not check for updates. Windows SmartScreen will warn: More info > Run anyway."
