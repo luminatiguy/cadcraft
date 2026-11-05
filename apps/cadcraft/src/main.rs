@@ -421,7 +421,11 @@ fn main() -> eframe::Result {
             // Autosave files (SAVEFILEPATH) default to `<settings dir>/autosave`.
             if let Some(dir) = &vars.config_dir {
                 app.enable_autosave(&dir.join("autosave"));
-                app.enable_update_check();
+                // A test build made with CADCRAFT_NO_UPDATE_CHECK set never offers the released
+                // version in its place.
+                if option_env!("CADCRAFT_NO_UPDATE_CHECK").is_none() {
+                    app.enable_update_check();
+                }
                 // Startup LISP (acad.lsp, acaddoc.lsp) is read from `<settings>/support`; the
                 // folder is made so it is there to put them in.
                 let support = dir.join("support");
