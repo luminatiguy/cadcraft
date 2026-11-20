@@ -383,6 +383,10 @@ fn about(ctx: &egui::Context, open: &mut bool) {
                 _ => {
                     ui.heading(crate::tl!("CADCraft"));
                     ui.label(crate::tf!("Version {version}", version = crate::VERSION));
+                    // A test build's own page (CADCRAFT_BUILD_PAGE at build time).
+                    if let Some(url) = option_env!("CADCRAFT_BUILD_PAGE").filter(|u| !u.is_empty()) {
+                        ui.hyperlink_to(crate::tl!("This build on GitHub"), url);
+                    }
                     ui.label(crate::tl!("Computer-aided design and drafting: an open-source, clean-room CAD application written in pure Rust."));
                     ui.add_space(6.0);
                     ui.label(RichText::new(crate::tl!("One of the Crafting Apps by the ArtCraft team and community.")).color(t.text_dim));

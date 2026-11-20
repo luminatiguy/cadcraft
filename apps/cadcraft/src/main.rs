@@ -455,6 +455,11 @@ fn main() -> eframe::Result {
             let (workspace, restored, workspace_error) = workspace::Workspace::load(vars.config_dir.as_deref());
             if let Some(ui) = restored {
                 app.ui = ui;
+            } else if workspace_error.is_none()
+                && let Ok(ui) = workspace::parse(test_build_defaults::WORKSPACE.as_bytes(), std::path::Path::new("test-build-defaults/workspace.json"))
+            {
+                // This test build's first run on a machine: the tester's own layout.
+                app.ui = ui;
             }
             app.set_system_cursor_default(vars.system_cursor == Switch::On);
             // macOS: CADCRAFT_NO_NATIVE_MENU=1 keeps the menus inside the window.
@@ -466,15 +471,11 @@ fn main() -> eframe::Result {
             }
             app.system_languages = vars.locale.map(|s| vec![s]).unwrap_or_else(|| sys_locale::get_locales().collect());
             // The user profile (Options): drafting settings, selection sizes, drawing-area colours.
-            if let Some(profile) = cc.storage.and_then(|s| s.get_string(cadcraft_ui_egui::options::PROFILE_KEY)) {
-                app.load_profile(&profile);
-            }
-            if let Some(prefs) = cc.storage.and_then(|s| s.get_string(cadcraft_ui_egui::PREFS_KEY)) {
-                app.load_prefs(&prefs);
-            }
-            if let Some(prefs) = cc.storage.and_then(|s| s.get_string(cadcraft_ui_egui::autosave::PREFS_KEY)) {
-                cadcraft_ui_egui::autosave::load_prefs(&prefs);
-            }
+            // Nothing saved yet (this test build's first run on a machine): the tester's own settings.
+            let saved = |key: &str| cc.storage.and_then(|s| s.get_string(key));
+            app.load_profile(&saved(cadcraft_ui_egui::options::PROFILE_KEY).unwrap_or_else(|| test_build_defaults::PROFILE.to_string()));
+            app.load_prefs(&saved(cadcraft_ui_egui::PREFS_KEY).unwrap_or_else(|| test_build_defaults::PREFS.to_string()));
+            cadcraft_ui_egui::autosave::load_prefs(&saved(cadcraft_ui_egui::autosave::PREFS_KEY).unwrap_or_else(|| test_build_defaults::AUTOSAVE.to_string()));
             // Autosave files (SAVEFILEPATH) default to `<settings dir>/autosave`.
             if let Some(dir) = &vars.config_dir {
                 app.enable_autosave(&dir.join("autosave"));
@@ -612,4 +613,14 @@ mod tests {
         follow_desktop(&mut raw, None);
         assert_eq!(raw.system_theme, None);
     }
+}
+
+/// The settings this Windows test build starts with on a machine where nothing is saved yet:
+/// the tester's own workspace, Options profile and preferences (no font or pattern folders, no
+/// recent files, no autosave folder). Not part of the pull requests.
+mod test_build_defaults {
+    pub const WORKSPACE: &str = include_str!("../test-build-defaults/workspace.json");
+    pub const PROFILE: &str = include_str!("../test-build-defaults/profile.json");
+    pub const PREFS: &str = include_str!("../test-build-defaults/prefs.json");
+    pub const AUTOSAVE: &str = include_str!("../test-build-defaults/autosave.json");
 }

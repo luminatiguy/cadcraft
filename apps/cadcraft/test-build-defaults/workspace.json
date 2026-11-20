@@ -1,0 +1,203 @@
+{
+  "version": 1,
+  "workspace": {
+    "collapsedGroups": [
+      "Solid",
+      "Boolean"
+    ],
+    "docking": {
+      "hidden": [
+        [
+          "layers",
+          {
+            "anchor": "properties",
+            "floating": null,
+            "group": {
+              "column": {
+                "iconic": false,
+                "iconic_width": null,
+                "side": "End",
+                "width": 300.0
+              },
+              "height": null,
+              "minimized": false
+            },
+            "placement": {
+              "Group": {
+                "below": false
+              }
+            },
+            "sibling": [],
+            "size": null,
+            "stack": null
+          }
+        ]
+      ],
+      "layout": {
+        "floating": [],
+        "root": {
+          "Split": {
+            "axis": "Horizontal",
+            "first": {
+              "Dock": {
+                "columns": [
+                  {
+                    "groups": [
+                      {
+                        "active": 0,
+                        "height": null,
+                        "minimized": false,
+                        "panels": [
+                          "properties",
+                          "toolSets"
+                        ]
+                      }
+                    ],
+                    "iconic": false,
+                    "iconic_width": null,
+                    "width": 220.0
+                  }
+                ],
+                "side": "Start"
+              }
+            },
+            "second": {
+              "Tabs": {
+                "active": 0,
+                "panels": [
+                  "canvas"
+                ]
+              }
+            },
+            "size": {
+              "FixedFirst": 220.0
+            }
+          }
+        }
+      },
+      "locked": false,
+      "saved": null,
+      "version": 2
+    },
+    "dockingVersion": 2,
+    "historyLines": 0,
+    "inWindowMenu": true,
+    "layersBar": {
+      "dock": "top",
+      "items": [
+        "ui.dialog.layers",
+        "layer.combo",
+        "|",
+        "laymcur",
+        "laymch",
+        "layerp",
+        "|",
+        "layiso",
+        "layoff",
+        "layfrz",
+        "laylck",
+        "layulk",
+        "|",
+        "style",
+        "textstyle.combo",
+        "dimstyle",
+        "dimstyle.combo",
+        "linetype.combo",
+        "lweight.combo",
+        "color.combo"
+      ],
+      "show": true
+    },
+    "propertiesAll": true,
+    "ribbonTab": "Draw",
+    "showCommandLine": true,
+    "showFileTabs": true,
+    "showLayerList": true,
+    "showPalettes": true,
+    "showStatusBar": true,
+    "showToolbar": true,
+    "showToolsets": true,
+    "showUcsIcon": false,
+    "showViewcube": false,
+    "toolbarDock": "top",
+    "toolbarItems": [
+      "new",
+      "open",
+      "qsave",
+      "saveas",
+      "|",
+      "u",
+      "redo",
+      "|",
+      "plot",
+      "publish",
+      "pagesetup",
+      "preview",
+      "|",
+      "import",
+      "export",
+      "attach",
+      "share",
+      "|",
+      "zoom.window",
+      "pan",
+      "3dorbit",
+      "|",
+      "zoom.extents",
+      "ui.toggle.palettes",
+      "ui.dialog.layers",
+      "ui.dialog.blocks",
+      "|",
+      "dist",
+      "list",
+      "area",
+      "|",
+      "ui.dialog.about"
+    ],
+    "toolsetTab": "Drafting",
+    "toolsetsBar": {
+      "dock": "top",
+      "items": [
+        "line",
+        "pline",
+        "circle",
+        "arc",
+        "rectang",
+        "polygon",
+        "ellipse",
+        "spline",
+        "hatch",
+        "|",
+        "insert",
+        "block",
+        "|",
+        "text",
+        "mtext",
+        "|",
+        "move",
+        "copy",
+        "rotate",
+        "mirror",
+        "scale",
+        "offset",
+        "arrayrect",
+        "trim",
+        "extend",
+        "fillet",
+        "erase",
+        "matchprop",
+        "explode",
+        "|",
+        "dimlinear",
+        "dimaligned",
+        "dimradius",
+        "dimdiameter",
+        "dimangular",
+        "dimarc",
+        "dimcontinue"
+      ],
+      "show": true
+    },
+    "toolsetsRibbon": false
+  }
+}

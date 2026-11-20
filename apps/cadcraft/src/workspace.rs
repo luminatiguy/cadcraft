@@ -74,7 +74,12 @@ fn read(path: &Path) -> Result<Option<UiState>, String> {
     if bytes.len() as u64 > MAX_BYTES {
         return Err(format!("{}: workspace file exceeds 64 KiB", path.display()));
     }
-    let value: Value = serde_json::from_slice(&bytes).map_err(|error| format!("{}: invalid workspace JSON: {error}", path.display()))?;
+    parse(&bytes, path).map(Some)
+}
+
+/// A workspace file's contents (`path` names it in errors).
+pub fn parse(bytes: &[u8], path: &Path) -> Result<UiState, String> {
+    let value: Value = serde_json::from_slice(bytes).map_err(|error| format!("{}: invalid workspace JSON: {error}", path.display()))?;
     if value.get("version").and_then(Value::as_u64) != Some(1) {
         return Err(format!("{}: unsupported workspace version", path.display()));
     }
@@ -101,7 +106,7 @@ fn read(path: &Path) -> Result<Option<UiState>, String> {
     ui.dialog = None;
     ui.start_tab = false;
     snapshot(&ui).map_err(|error| format!("{}: {error}", path.display()))?;
-    Ok(Some(ui))
+    Ok(ui)
 }
 
 fn write(path: &Path, workspace: &Value) -> Result<(), String> {
